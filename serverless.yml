@@ -1,0 +1,251 @@
+org: luanameniz
+service: itsm-incidentes
+
+provider:
+  name: aws
+  runtime: python3.12
+  region: us-east-1
+  stage: ${opt:stage, 'dev'}
+  memorySize: 256
+  timeout: 30
+  iam:
+    role: arn:aws:iam::${aws:accountId}:role/LabRole
+  environment:
+    TABLA_INCIDENTES: ${self:service}-${sls:stage}-incidentes
+    TABLA_COMENTARIOS: ${self:service}-${sls:stage}-comentarios
+    TABLA_NOTIFICACIONES: ${self:service}-${sls:stage}-notificaciones
+    TABLA_CONTADORES: ${self:service}-${sls:stage}-contadores
+    SNS_EVENTOS_ARN: ${ssm:/itsm/${sls:stage}/sns-eventos-arn}
+
+custom:
+  authorizer:
+    arn: ${ssm:/itsm/${sls:stage}/authorizer-arn}
+    type: token
+    identitySource: method.request.header.Authorization
+    resultTtlInSeconds: 300
+
+package:
+  patterns:
+    - '!seed/**'
+    - '!README.md'
+    - '!.venv/**'
+
+functions:
+  # ---------------------- API (todas protegidas) ----------------------
+  crearIncidente:
+    handler: src/handlers/incidentes.crear
+    events:
+      - http:
+          path: incidentes
+          method: post
+          cors: true
+          authorizer: ${self:custom.authorizer}
+  listarIncidentes:
+    handler: src/handlers/incidentes.listar
+    events:
+      - http:
+          path: incidentes
+          method: get
+          cors: true
+          authorizer: ${self:custom.authorizer}
+  obtenerIncidente:
+    handler: src/handlers/incidentes.obtener
+    events:
+      - http:
+          path: incidentes/{id}
+          method: get
+          cors: true
+          authorizer: ${self:custom.authorizer}
+  editarIncidente:
+    handler: src/handlers/incidentes.editar
+    events:
+      - http:
+          path: incidentes/{id}
+          method: put
+          cors: true
+          authorizer: ${self:custom.authorizer}
+  cambiarEstadoIncidente:
+    handler: src/handlers/incidentes.cambiar_estado
+    events:
+      - http:
+          path: incidentes/{id}/estado
+          method: patch
+          cors: true
+          authorizer: ${self:custom.authorizer}
+  asignarIncidente:
+    handler: src/handlers/incidentes.asignar
+    events:
+      - http:
+          path: incidentes/{id}/asignar
+          method: patch
+          cors: true
+          authorizer: ${self:custom.authorizer}
+  escalarIncidente:
+    handler: src/handlers/incidentes.escalar_problema
+    events:
+      - http:
+          path: incidentes/{id}/escalar-problema
+          method: post
+          cors: true
+          authorizer: ${self:custom.authorizer}
+  crearComentario:
+    handler: src/handlers/incidentes.crear_comentario
+    events:
+      - http:
+          path: incidentes/{id}/comentarios
+          method: post
+          cors: true
+          authorizer: ${self:custom.authorizer}
+  listarComentarios:
+    handler: src/handlers/incidentes.listar_comentarios
+    events:
+      - http:
+          path: incidentes/{id}/comentarios
+          method: get
+          cors: true
+          authorizer: ${self:custom.authorizer}
+  eliminarIncidente:
+    handler: src/handlers/incidentes.eliminar
+    events:
+      - http:
+          path: incidentes/{id}
+          method: delete
+          cors: true
+          authorizer: ${self:custom.authorizer}
+  listarNotificaciones:
+    handler: src/handlers/notificaciones.listar
+    events:
+      - http:
+          path: notificaciones
+          method: get
+          cors: true
+          authorizer: ${self:custom.authorizer}
+
+  # ---------------------- CONSUMIDORES SQS ----------------------
+  consumirQIncidentes:
+    handler: src/consumers/incidentes.handler
+    events:
+      - sqs:
+          arn: ${ssm:/itsm/${sls:stage}/q-incidentes-arn}
+          batchSize: 10
+          functionResponseType: ReportBatchItemFailures
+  consumirQNotificaciones:
+    handler: src/consumers/notificaciones.handler
+    events:
+      - sqs:
+          arn: ${ssm:/itsm/${sls:stage}/q-notificaciones-arn}
+          batchSize: 10
+          functionResponseType: ReportBatchItemFailures
+
+resources:
+  Resources:
+    TablaIncidentes:
+      Type: AWS::DynamoDB::Table
+      Properties:
+        TableName: ${self:provider.environment.TABLA_INCIDENTES}
+        BillingMode: PAY_PER_REQUEST
+        AttributeDefinitions:
+          - AttributeName: tenant_id
+            AttributeType: S
+          - AttributeName: incidente_id
+            AttributeType: S
+          - AttributeName: estado_creado
+            AttributeType: S
+          - AttributeName: asignado_creado
+            AttributeType: S
+          - AttributeName: solicitante_creado
+            AttributeType: S
+        KeySchema:
+          - AttributeName: tenant_id
+            KeyType: HASH
+          - AttributeName: incidente_id
+            KeyType: RANGE
+        GlobalSecondaryIndexes:
+          - IndexName: GSI1
+            KeySchema:
+              - AttributeName: tenant_id
+                KeyType: HASH
+              - AttributeName: estado_creado
+                KeyType: RANGE
+            Projection:
+              ProjectionType: ALL
+          - IndexName: GSI2
+            KeySchema:
+              - AttributeName: tenant_id
+                KeyType: HASH
+              - AttributeName: asignado_creado
+                KeyType: RANGE
+            Projection:
+              ProjectionType: ALL
+          - IndexName: GSI3
+            KeySchema:
+              - AttributeName: tenant_id
+                KeyType: HASH
+              - AttributeName: solicitante_creado
+                KeyType: RANGE
+            Projection:
+              ProjectionType: ALL
+    TablaComentarios:
+      Type: AWS::DynamoDB::Table
+      Properties:
+        TableName: ${self:provider.environment.TABLA_COMENTARIOS}
+        BillingMode: PAY_PER_REQUEST
+        AttributeDefinitions:
+          - AttributeName: tenant_incidente
+            AttributeType: S
+          - AttributeName: comentario_id
+            AttributeType: S
+        KeySchema:
+          - AttributeName: tenant_incidente
+            KeyType: HASH
+          - AttributeName: comentario_id
+            KeyType: RANGE
+    TablaNotificaciones:
+      Type: AWS::DynamoDB::Table
+      Properties:
+        TableName: ${self:provider.environment.TABLA_NOTIFICACIONES}
+        BillingMode: PAY_PER_REQUEST
+        AttributeDefinitions:
+          - AttributeName: tenant_id
+            AttributeType: S
+          - AttributeName: notificacion_id
+            AttributeType: S
+        KeySchema:
+          - AttributeName: tenant_id
+            KeyType: HASH
+          - AttributeName: notificacion_id
+            KeyType: RANGE
+    TablaContadores:
+      Type: AWS::DynamoDB::Table
+      Properties:
+        TableName: ${self:provider.environment.TABLA_CONTADORES}
+        BillingMode: PAY_PER_REQUEST
+        AttributeDefinitions:
+          - AttributeName: tenant_id
+            AttributeType: S
+          - AttributeName: entidad
+            AttributeType: S
+        KeySchema:
+          - AttributeName: tenant_id
+            KeyType: HASH
+          - AttributeName: entidad
+            KeyType: RANGE
+    # CORS tambien en los 401/403 que devuelve el authorizer (si no, el front ve "CORS error")
+    GatewayResponseDefault4XX:
+      Type: AWS::ApiGateway::GatewayResponse
+      Properties:
+        ResponseType: DEFAULT_4XX
+        RestApiId:
+          Ref: ApiGatewayRestApi
+        ResponseParameters:
+          gatewayresponse.header.Access-Control-Allow-Origin: "'*'"
+          gatewayresponse.header.Access-Control-Allow-Headers: "'*'"
+    GatewayResponseDefault5XX:
+      Type: AWS::ApiGateway::GatewayResponse
+      Properties:
+        ResponseType: DEFAULT_5XX
+        RestApiId:
+          Ref: ApiGatewayRestApi
+        ResponseParameters:
+          gatewayresponse.header.Access-Control-Allow-Origin: "'*'"
+          gatewayresponse.header.Access-Control-Allow-Headers: "'*'"
