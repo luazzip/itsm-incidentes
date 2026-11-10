@@ -1,5 +1,5 @@
-org: luanameniz
 service: itsm-incidentes
+frameworkVersion: '3'
 
 provider:
   name: aws
@@ -15,20 +15,25 @@ provider:
     TABLA_COMENTARIOS: ${self:service}-${sls:stage}-comentarios
     TABLA_NOTIFICACIONES: ${self:service}-${sls:stage}-notificaciones
     TABLA_CONTADORES: ${self:service}-${sls:stage}-contadores
-    SNS_EVENTOS_ARN: ${ssm:/itsm/${sls:stage}/sns-eventos-arn}
+    EVENTS_ENABLED: 'false'
 
 custom:
   authorizer:
     arn: ${ssm:/itsm/${sls:stage}/authorizer-arn}
     type: token
     identitySource: method.request.header.Authorization
-    resultTtlInSeconds: 300
+    resultTtlInSeconds: 0
 
 package:
   patterns:
     - '!seed/**'
+    - '!docs/**'
+    - '!tests/**'
     - '!README.md'
     - '!.venv/**'
+    - '!node_modules/**'
+    - '!.git/**'
+    - '!src/consumers/**'
 
 functions:
   # ---------------------- API (todas protegidas) ----------------------
@@ -121,21 +126,24 @@ functions:
           cors: true
           authorizer: ${self:custom.authorizer}
 
-  # ---------------------- CONSUMIDORES SQS ----------------------
-  consumirQIncidentes:
-    handler: src/consumers/incidentes.handler
-    events:
-      - sqs:
-          arn: ${ssm:/itsm/${sls:stage}/q-incidentes-arn}
-          batchSize: 10
-          functionResponseType: ReportBatchItemFailures
-  consumirQNotificaciones:
-    handler: src/consumers/notificaciones.handler
-    events:
-      - sqs:
-          arn: ${ssm:/itsm/${sls:stage}/q-notificaciones-arn}
-          batchSize: 10
-          functionResponseType: ReportBatchItemFailures
+  # ---------------------- CONSUMIDORES SQS (POSPUESTOS - Contrato v1.1) ----------------------
+  # Se activan cuando el profesor autorice la fase EDA y itsm-infra este desplegado.
+  # Para activarlos: descomentar este bloque y quitar '!src/consumers/**' de package.patterns.
+  # consumirQIncidentes:
+  #   handler: src/consumers/incidentes.handler
+  #   events:
+  #     - sqs:
+  #         arn: ${ssm:/itsm/${sls:stage}/q-incidentes-arn}
+  #         batchSize: 10
+  #         functionResponseType: ReportBatchItemFailures
+  # consumirQNotificaciones:
+  #   handler: src/consumers/notificaciones.handler
+  #   events:
+  #     - sqs:
+  #         arn: ${ssm:/itsm/${sls:stage}/q-notificaciones-arn}
+  #         batchSize: 10
+  #         functionResponseType: ReportBatchItemFailures
+
 
 resources:
   Resources:
