@@ -16,10 +16,11 @@ STAGE = sys.argv[1] if len(sys.argv) > 1 else 'dev'
 TENANTS = sys.argv[2].split(',') if len(sys.argv) > 2 else ['acme', 'globex', 'initech']
 POR_TENANT = 10000
 
-# SUPUESTO (confirmar con Integrante 5 segun su seed de usuarios):
-# usr-<tenant>-00001 = ADMIN, 00002..00050 = AGENTE, 00051..10000 = SOLICITANTE
-AGENTES = range(2, 51)
-SOLICITANTES = range(51, POR_TENANT + 1)
+# Roles segun el seed de itsm-auth: 00001 = ADMIN, 00002..00101 = AGENTE, 00102..10000 = SOLICITANTE
+AGENTES = range(2, 102)
+SOLICITANTES = range(102, POR_TENANT + 1)
+# Fecha base fija: el seed genera exactamente los mismos datos en cualquier dia que se ejecute
+FECHA_BASE = datetime(2026, 11, 10, tzinfo=timezone.utc)
 
 IMPACTOS = ('ALTO', 'MEDIO', 'BAJO')
 URGENCIAS = ('ALTA', 'MEDIA', 'BAJA')
@@ -58,7 +59,7 @@ def iso(momento):
 def generar(tenant):
     rnd = random.Random(f'2026-{tenant}')  # semilla fija: siempre los mismos datos
     fake.seed_instance(f'2026-{tenant}')
-    hoy = datetime.now(timezone.utc).replace(microsecond=0)
+    hoy = FECHA_BASE
     # Fechas en los ultimos 12 meses, ordenadas: inc-<t>-000001 es el mas antiguo
     fechas = sorted(hoy - timedelta(seconds=rnd.randint(0, 365 * 24 * 3600)) for _ in range(POR_TENANT))
     for n, creado in enumerate(fechas, start=1):

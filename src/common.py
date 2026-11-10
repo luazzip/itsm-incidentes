@@ -11,13 +11,16 @@ from botocore.exceptions import ClientError
 
 # Clientes fuera del handler: se reutilizan mientras la Lambda esta "caliente"
 dynamodb = boto3.resource('dynamodb')
-sns = boto3.client('sns')
 
 TABLA_INCIDENTES = dynamodb.Table(os.environ['TABLA_INCIDENTES'])
 TABLA_COMENTARIOS = dynamodb.Table(os.environ['TABLA_COMENTARIOS'])
 TABLA_NOTIFICACIONES = dynamodb.Table(os.environ['TABLA_NOTIFICACIONES'])
 TABLA_CONTADORES = dynamodb.Table(os.environ['TABLA_CONTADORES'])
-SNS_EVENTOS_ARN = os.environ['SNS_EVENTOS_ARN']
+
+# Eventos POSPUESTOS en esta fase (Contrato v1.1): solo se publica si EVENTS_ENABLED=true y hay ARN
+EVENTOS_ACTIVOS = os.environ.get('EVENTS_ENABLED', 'false').strip().lower() == 'true'
+SNS_EVENTOS_ARN = os.environ.get('SNS_EVENTOS_ARN')  # opcional
+sns = boto3.client('sns') if EVENTOS_ACTIVOS and SNS_EVENTOS_ARN else None
 
 ROLES = ('ADMIN', 'AGENTE', 'SOLICITANTE')
 
@@ -232,6 +235,9 @@ def actualizar(tabla, clave, cambios, quitar=(), condicion=None):
 # ---------------------------------------------------------------- eventos (SNS)
 def publicar_evento(evento, tenant_id, data):
     """Publica el sobre de evento del contrato. MessageAttributes 'evento' = lo que usan las FilterPolicy."""
+    if sns is None:  # EVENTS_ENABLED=false: no-op, nunca rompe el CRUD
+        log('INFO', accion='evento_omitido', motivo='EVENTS_ENABLED=false', evento=evento, tenant_id=tenant_id)
+        return
     sobre = {
         'evento': evento,
         'version': '1.0',
