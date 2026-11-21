@@ -1,6 +1,7 @@
 service: itsm-incidentes
 frameworkVersion: '3'
 
+
 provider:
   name: aws
   runtime: python3.12
@@ -8,14 +9,17 @@ provider:
   stage: ${opt:stage, 'dev'}
   memorySize: 256
   timeout: 30
+
   iam:
     role: arn:aws:iam::${aws:accountId}:role/LabRole
+
   environment:
     TABLA_INCIDENTES: ${self:service}-${sls:stage}-incidentes
     TABLA_COMENTARIOS: ${self:service}-${sls:stage}-comentarios
     TABLA_NOTIFICACIONES: ${self:service}-${sls:stage}-notificaciones
     TABLA_CONTADORES: ${self:service}-${sls:stage}-contadores
-    EVENTS_ENABLED: 'false'
+    EVENTS_ENABLED: "true"
+    SNS_EVENTOS_ARN: ${ssm:/itsm/${sls:stage}/sns-eventos-arn}
 
 custom:
   authorizer:
@@ -23,6 +27,8 @@ custom:
     type: token
     identitySource: method.request.header.Authorization
     resultTtlInSeconds: 0
+    managedExternally: true
+
 
 package:
   patterns:
