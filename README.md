@@ -2,11 +2,20 @@
 Microservicio de Incidentes del SaaS ITSM. API Gateway + Lambda (Python 3.12) + DynamoDB,
 protegido con el Lambda Authorizer central de itsm-auth. Serverless Framework 3, us-east-1, stage dev, LabRole.
 
-## Estado en esta fase (Contrato de Integración v1.1)
-- SNS, SQS, DLQ y consumidores **pospuestos** por revisión del profesor.
-- `EVENTS_ENABLED=false`: `publicar_evento()` no publica y nunca rompe el CRUD (deja log `evento_omitido`).
-- `src/consumers/` se conserva como código futuro, fuera del despliegue.
-- `GET /notificaciones` responde una lista vacía hasta que se active la fase de eventos.
+## Estado del despliegue
+
+Microservicio desplegado en AWS (`us-east-1`, stage `dev`) con API Gateway, Lambda Python 3.12 y DynamoDB.
+
+- **Publicacion de eventos:** habilitada mediante `EVENTS_ENABLED=true` y el topico SNS compartido `itsm-eventos-dev`.
+- **Consumidor de incidentes:** `consumirQIncidentes`, conectado a `itsm-q-incidentes-dev`.
+- **Consumidor de notificaciones:** `consumirQNotificaciones`, conectado a `itsm-q-notificaciones-dev`.
+- **Procesamiento SQS:** habilitado, con soporte para `ReportBatchItemFailures`.
+- **Persistencia de notificaciones:** tabla `itsm-incidentes-dev-notificaciones`.
+- **Aislamiento multi-tenant:** aplicado mediante el contexto del Lambda Authorizer.
+
+Se verifico la creacion automatica de un problema al escalar un incidente y la resolucion automatica del incidente al recibir `problema.resuelto`.
+
+Tambien se comprobo la persistencia de notificaciones procedentes del bus de eventos.
 
 ## Requisitos
 - itsm-auth desplegado en la misma cuenta (parámetro SSM `/itsm/dev/authorizer-arn`).
@@ -36,16 +45,30 @@ agentes `usr-{tenant}-00002..00101` (según el seed de itsm-auth). Ejecutar el s
 | POST | /incidentes/{id}/comentarios | Todos |
 | GET | /incidentes/{id}/comentarios | Todos |
 | DELETE | /incidentes/{id} (solo NUEVO) | ADMIN |
-| GET | /notificaciones (inactivo en esta fase) | Todos |
+| GET | /notificaciones | Todos |
 
-## Activar la fase de eventos (solo cuando se autorice)
-1. Desplegar itsm-infra.
-2. En serverless.yml: `EVENTS_ENABLED: 'true'` y `SNS_EVENTOS_ARN: ${ssm:/itsm/${sls:stage}/sns-eventos-arn}`.
-3. Descomentar `consumirQIncidentes` y `consumirQNotificaciones` y quitar `'!src/consumers/**'` de `package.patterns`.
-4. `serverless deploy`.
-Publica: incidente.creado, incidente.escalado_a_problema, incidente.resuelto.
-Consume: problema.resuelto (q-incidentes) y todos los eventos (q-notificaciones).
+## Integracion por eventos
 
+Los productores publican mensajes en SNS con los atributos `evento` y `tenant_id`. Las suscripciones SNS distribuyen los mensajes a las colas SQS correspondientes.
+
+**Eventos publicados:**
+- `incidente.creado`
+- `incidente.escalado_a_problema`
+- `incidente.resuelto`
+
+**Eventos consumidos:**
+- `problema.resuelto`: permite resolver incidentes vinculados al problema.
+- Eventos recibidos mediante `q-notificaciones`: se almacenan en DynamoDB para su consulta.
+
+Infra administra las colas, sus DLQ, las suscripciones SNS y las alarmas CloudWatch.
+
+**Prueba de integracion verificada:**
+
+- Incidente: `inc-acme-010001`
+- Problema: `prb-acme-evt856d7948b6b3`
+- Cambio: `chg-acme-e40688e8e5ca`
+
+Despues de implementar el cambio, Problemas publico `problema.resuelto` y el incidente original paso automaticamente a `RESUELTO`.
 ## Modelo de datos (DynamoDB)
 **itsm-incidentes-dev-incidentes**: PK tenant_id, SK incidente_id
 ```json
@@ -65,5 +88,5 @@ GSI1: tenant_id + estado_creado · GSI2: tenant_id + asignado_creado · GSI3: te
 {"tenant_incidente":"acme#inc-acme-000001","comentario_id":"com-20261110203000123456-a1b2c3",
  "autor_id":"usr-acme-00003","autor_rol":"AGENTE","texto":"...","creado_en":"..."}
 ```
-**itsm-incidentes-dev-notificaciones** (auxiliar, se llena en la fase de eventos): PK tenant_id, SK notificacion_id
+**itsm-incidentes-dev-notificaciones** (persistencia de notificaciones recibidas por SQS): PK tenant_id, SK notificacion_id
 **itsm-incidentes-dev-contadores** (auxiliar): PK tenant_id, SK entidad → `{"tenant_id":"acme","entidad":"incidente","valor":10001}`
