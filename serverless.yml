@@ -1,6 +1,6 @@
+
 service: itsm-incidentes
 frameworkVersion: '3'
-
 
 provider:
   name: aws
@@ -29,7 +29,6 @@ custom:
     resultTtlInSeconds: 0
     managedExternally: true
 
-
 package:
   patterns:
     - '!seed/**'
@@ -39,10 +38,10 @@ package:
     - '!.venv/**'
     - '!node_modules/**'
     - '!.git/**'
-    - '!src/consumers/**'
 
 functions:
-  # ---------------------- API (todas protegidas) ----------------------
+  # API REST - Incidentes
+
   crearIncidente:
     handler: src/handlers/incidentes.crear
     events:
@@ -51,6 +50,7 @@ functions:
           method: post
           cors: true
           authorizer: ${self:custom.authorizer}
+
   listarIncidentes:
     handler: src/handlers/incidentes.listar
     events:
@@ -59,6 +59,7 @@ functions:
           method: get
           cors: true
           authorizer: ${self:custom.authorizer}
+
   obtenerIncidente:
     handler: src/handlers/incidentes.obtener
     events:
@@ -67,6 +68,7 @@ functions:
           method: get
           cors: true
           authorizer: ${self:custom.authorizer}
+
   editarIncidente:
     handler: src/handlers/incidentes.editar
     events:
@@ -75,6 +77,7 @@ functions:
           method: put
           cors: true
           authorizer: ${self:custom.authorizer}
+
   cambiarEstadoIncidente:
     handler: src/handlers/incidentes.cambiar_estado
     events:
@@ -83,6 +86,7 @@ functions:
           method: patch
           cors: true
           authorizer: ${self:custom.authorizer}
+
   asignarIncidente:
     handler: src/handlers/incidentes.asignar
     events:
@@ -91,6 +95,7 @@ functions:
           method: patch
           cors: true
           authorizer: ${self:custom.authorizer}
+
   escalarIncidente:
     handler: src/handlers/incidentes.escalar_problema
     events:
@@ -99,6 +104,7 @@ functions:
           method: post
           cors: true
           authorizer: ${self:custom.authorizer}
+
   crearComentario:
     handler: src/handlers/incidentes.crear_comentario
     events:
@@ -107,6 +113,7 @@ functions:
           method: post
           cors: true
           authorizer: ${self:custom.authorizer}
+
   listarComentarios:
     handler: src/handlers/incidentes.listar_comentarios
     events:
@@ -115,6 +122,7 @@ functions:
           method: get
           cors: true
           authorizer: ${self:custom.authorizer}
+
   eliminarIncidente:
     handler: src/handlers/incidentes.eliminar
     events:
@@ -123,6 +131,7 @@ functions:
           method: delete
           cors: true
           authorizer: ${self:custom.authorizer}
+
   listarNotificaciones:
     handler: src/handlers/notificaciones.listar
     events:
@@ -132,24 +141,25 @@ functions:
           cors: true
           authorizer: ${self:custom.authorizer}
 
-  # ---------------------- CONSUMIDORES SQS (POSPUESTOS - Contrato v1.1) ----------------------
-  # Se activan cuando el profesor autorice la fase EDA y itsm-infra este desplegado.
-  # Para activarlos: descomentar este bloque y quitar '!src/consumers/**' de package.patterns.
-  # consumirQIncidentes:
-  #   handler: src/consumers/incidentes.handler
-  #   events:
-  #     - sqs:
-  #         arn: ${ssm:/itsm/${sls:stage}/q-incidentes-arn}
-  #         batchSize: 10
-  #         functionResponseType: ReportBatchItemFailures
-  # consumirQNotificaciones:
-  #   handler: src/consumers/notificaciones.handler
-  #   events:
-  #     - sqs:
-  #         arn: ${ssm:/itsm/${sls:stage}/q-notificaciones-arn}
-  #         batchSize: 10
-  #         functionResponseType: ReportBatchItemFailures
+  # Consumidores del bus de eventos SNS/SQS
 
+  consumirQIncidentes:
+    handler: src/consumers/incidentes.handler
+    events:
+      - sqs:
+          arn: ${ssm:/itsm/${sls:stage}/q-incidentes-arn}
+          batchSize: 10
+          functionResponseType: ReportBatchItemFailures
+          enabled: true
+
+  consumirQNotificaciones:
+    handler: src/consumers/notificaciones.handler
+    events:
+      - sqs:
+          arn: ${ssm:/itsm/${sls:stage}/q-notificaciones-arn}
+          batchSize: 10
+          functionResponseType: ReportBatchItemFailures
+          enabled: true
 
 resources:
   Resources:
@@ -199,6 +209,7 @@ resources:
                 KeyType: RANGE
             Projection:
               ProjectionType: ALL
+
     TablaComentarios:
       Type: AWS::DynamoDB::Table
       Properties:
@@ -214,6 +225,7 @@ resources:
             KeyType: HASH
           - AttributeName: comentario_id
             KeyType: RANGE
+
     TablaNotificaciones:
       Type: AWS::DynamoDB::Table
       Properties:
@@ -229,6 +241,7 @@ resources:
             KeyType: HASH
           - AttributeName: notificacion_id
             KeyType: RANGE
+
     TablaContadores:
       Type: AWS::DynamoDB::Table
       Properties:
@@ -244,7 +257,9 @@ resources:
             KeyType: HASH
           - AttributeName: entidad
             KeyType: RANGE
-    # CORS tambien en los 401/403 que devuelve el authorizer (si no, el front ve "CORS error")
+
+    # CORS para errores de API Gateway y del authorizer
+
     GatewayResponseDefault4XX:
       Type: AWS::ApiGateway::GatewayResponse
       Properties:
@@ -254,6 +269,7 @@ resources:
         ResponseParameters:
           gatewayresponse.header.Access-Control-Allow-Origin: "'*'"
           gatewayresponse.header.Access-Control-Allow-Headers: "'*'"
+
     GatewayResponseDefault5XX:
       Type: AWS::ApiGateway::GatewayResponse
       Properties:
